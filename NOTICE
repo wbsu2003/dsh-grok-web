@@ -1,0 +1,19 @@
+dsh-grok-web
+Copyright 2026 dsh-grok-web contributors
+
+This product is an unofficial, independent plugin for the DeepSeek Harness
+plugin ecosystem. It is NOT affiliated with, endorsed by, or sponsored by
+xAI, Grok, or DeepSeek. "Grok" and "DeepSeek" are trademarks of their
+respective owners.
+
+The implementation is original work. Its understanding of the grok.com
+web client's messaging behaviour was informed by the author's earlier
+Web2Chat project; the DSH adapter contract and bundle packaging follow the
+publicly available dsh-deepseek-web-login project (Apache-2.0). No source
+code from those projects and no code extracted from any packaged
+application is included in this distribution.
+
+This software connects to grok.com using credentials supplied by the user's
+own logged-in browser session. Users are responsible for complying with the
+applicable terms of service and for any consequences of using their account
+through this plugin.

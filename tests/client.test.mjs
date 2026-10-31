@@ -54,6 +54,32 @@ test('client 包: __ModuleLoader__ 契约与 id', () => {
   assert.deepEqual(required, ['react'])
 })
 
+/** 只把面板渲染出来，用于断言元素形状（不校验注册契约）。 */
+function mountPanel(react) {
+  const { exports } = load(react)
+  let panel
+  exports.apply({
+    effect: (fn) => fn(),
+    slots: {
+      inject: (name, factory) => factory(),
+      register: (spec, component) => {
+        panel = component().type()
+        return () => {}
+      },
+    },
+  })
+  return panel
+}
+
+function walk(node, visit) {
+  if (Array.isArray(node)) return node.forEach((child) => walk(child, visit))
+  if (node && node.$$typeof) {
+    visit(node)
+    return walk(node.children, visit)
+  }
+  return undefined
+}
+
 test('client 包: 在 settings.section 注册面板，渲染函数返回 React 元素', () => {
   const react = createReactStub()
   const { exports } = load(react)
@@ -101,9 +127,22 @@ test('client 包: 在 settings.section 注册面板，渲染函数返回 React �
     else if (node && node.$$typeof) collect(node.children)
   }
   collect(panel.children)
-  for (const label of ['浏览器登录', '从调试端口导入', '探活']) {
+  // status 还没拉到时（browsers 为空）也要有一组能点的按钮，不能只剩空壳。
+  for (const label of ['用 浏览器 登录', '用我的默认浏览器登录', '从调试端口导入', '探活', '保存并验证']) {
     assert.ok(labels.includes(label), `面板缺少按钮：${label}`)
   }
+})
+
+test('client 包: Cookie 框是密码型输入，空内容时不给提交机会', () => {
+  const panel = mountPanel(createReactStub())
+  const nodes = []
+  walk(panel, (node) => nodes.push(node))
+  const cookie = nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Cookie')
+  assert.ok(cookie, '面板要有 Cookie 输入框')
+  assert.equal(cookie.props.type, 'password', '粘贴的是登录态明文，不能在界面上显示出来')
+  const save = nodes.find((node) => node.type === 'button' && node.children.includes('保存并验证'))
+  assert.ok(save, '要有「保存并验证」按钮')
+  assert.equal(save.props.disabled, true, 'Cookie 还空着时按钮必须不可点')
 })
 
 test('client 包: 槽位不可用时只降级，不把整个 client fiber 带崩', () => {

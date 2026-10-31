@@ -87,7 +87,18 @@ dsh plugin --profile desktop add ".\dsh-grok-web-0.1.0.tgz"
 1. **模型 → 添加提供商**：出现 `Grok 网页版`（无 API Key 输入框，因为走浏览器登录态）。
    登录态缺失时这一项会带一行错误说明，点进去就是下面的设置节。
 2. **设置 → Grok 网页版**（面板，来自 client 包 `lib/client.js`）：
-   - **浏览器登录**：拉起独立 profile 的 Chrome/Edge 抓 Cookie，进度实时显示在面板下方；
+   - **用 Microsoft Edge 登录 / 用 Google Chrome 登录**：按本机实际装了哪些浏览器各出一个按钮。
+     拉起的是**独立 profile**（不是你的日常浏览器），进度实时显示在面板下方；等待期间如果登录页
+     （grok.com 或 X 的核验页）在页面上写了原因，面板会把页面原文复述出来，连续三次命中同一类
+     拒绝文案就早停报 `AUTH`；
+   - **用我的默认浏览器登录**：只在你日常使用的浏览器里打开 grok.com —— 这条路**抓不到 Cookie**
+     （Chrome/Edge 136 起在默认 profile 上直接忽略 `--remote-debugging-port`），点开之后按面板
+     提示从 F12 → 网络 里复制 `cookie` 请求头，粘到面板下方的「Cookie」框。日常浏览器有账号信誉，
+     独立 profile 被 X 要求核验账户时走这条最省事；
+   - **Cookie 框 + 保存并验证**：把上面复制到的整行 `cookie` 粘进去（密码框，界面上显示成点），
+     点「保存并验证」= 写入 `auth.json` + 一次 mgw 握手。这是浏览器登录走不完时的兜底入口。
+     注意 **先落盘、再握手**：握手失败（比如代理不通）时登录态也已经存好，面板会把原因原样列出来；
+     设置节里的 `cookie` 字段非空时会**优先于**这个文件，要用面板粘贴就把那个字段清空（面板会提醒你）；
    - **从调试端口导入**：不弹新窗口，直接连一个已经带 `--remote-debugging-port=<端口>` 启动、
      且已登录 grok.com 的浏览器（默认填 9222）。这种模式**只读 Cookie，绝不关闭你的浏览器**；
    - **探活**：用现有登录态做一次 mgw 握手，不提问、不消耗额度。
@@ -112,13 +123,17 @@ node scripts/login.mjs
 | `--status` | 只检查现有登录态并握手验证，不打开浏览器 |
 | `--keep-open` | 捕获完成后保留浏览器窗口 |
 | `--cookie "<Cookie 头>"` | 手动粘贴 Cookie（需含 `x-userid`）；也可配 `--user-id` |
-| `--browser <路径>` | 指定 Chrome/Edge 可执行文件（或环境变量 `GROK_BROWSER_PATH`） |
+| `--browser <edge\|chrome\|路径>` | 用哪个浏览器登录（默认 Edge 优先），或直接给可执行文件路径 |
 | `--profile <目录>` | 指定登录用的独立 profile |
 | `--proxy <url\|auto\|off>` | Node 侧握手使用的代理；默认 `auto`（环境变量 → Windows 系统代理） |
 | `--no-verify` | 跳过握手验证（不推荐） |
 
 手动取 Cookie：在已登录的 grok.com 按 F12 → Network → 任一请求 → 复制完整 `Cookie` 请求头，
 再执行 `node scripts/login.mjs --cookie "..."`。**不要**把 Cookie 贴进 issue、聊天或仓库。
+（必须走 Network 面板：`sso` / `sso-rw` 是 httpOnly，控制台里的 `document.cookie` 看不到它们。）
+
+Edge 与 Chrome 各用一份独立 profile（`browser-profile-edge` / `browser-profile`）：同一个
+user-data-dir 只能被一个浏览器实例占住，共用只会让第二个把手上的窗口交给第一个。
 
 ## 验证
 
@@ -157,7 +172,7 @@ node scripts/probe.mjs --status
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `authFile` | `<DSH_HOME>/grok-web/auth.json` | 登录态文件位置 |
-| `cookie` | 空 | 直接给 Cookie 头（优先于文件）；必须含 `x-userid` |
+| `cookie` | 空 | 直接给 Cookie 头（**优先于** `authFile`，也优先于面板「Cookie」框写入的登录态）；必须含 `x-userid` |
 | `userId` | 空 | 手动指定 uid（Cookie 里没有 `x-userid` 时用） |
 | `userAgent` | Chrome 152 Windows | 请求头 UA；默认已足够 |
 | `proxy` | `auto` | `auto` = 环境变量 → Windows 系统代理；`off`/`direct`/`false` = 直连；也可写 `http://127.0.0.1:2081` |
@@ -235,6 +250,8 @@ Expert / Heavy 想试：把设置里的 `model` 填成 `expert` / `heavy`，这�
 | `EMPTY_RESPONSE` | 本轮没有正文、只有思考，或模型给出的调用无法解析 | 插件会自动重试；持续出现时先在网页端手动确认账号可用 |
 | `TIMEOUT` / `TRANSPORT` | 网络、代理、TLS、连接中断 | 检查代理；用 `--proxy off` 对照；看 `probe.mjs --status` |
 | `ECONNREFUSED 127.0.0.1:<port>`（登录时） | 读到了上次退出后残留的 `DevToolsActivePort` | 新版会自动清理；也可手动删掉 `%USERPROFILE%\.dsh\grok-web\browser-profile\DevToolsActivePort` 再重试 |
+| 登录报 `AUTH` 且消息里带「页面提示「…」」 | 登录没在这个浏览器里走完，页面把原因写在了正文里（如「临时限制」「Too many login attempts」），捕获脚本本身在正常读 Cookie | 脚本连续三次读到同一类文案就会早停并原文复述；改走「从调试端口导入」（已登录的浏览器）或面板下方「Cookie」框手动粘贴 |
+| 独立 profile 里卡在 X 的「确认你的帐户」（地址带 `#/s/knowledge_check/`） | X 对新设备/新 profile 的账户核验步骤，不是登录表单；自动填充进去的用户名往往没写进页面自己的表单状态，点「继续」看着没反应 | 在用户名框里**手动清空再逐字重输**再点继续；仍不行就改用「用我的默认浏览器登录」+ 面板「Cookie」框手动粘贴（日常浏览器有信誉，一般不会再要核验） |
 | `CONTEXT_WINDOW_EXCEEDED` | 系统提示 + 工具目录超出预算 | 减少工具/系统提示，或调大 `maxPromptChars` |
 | 回答中途停住 | 可能是 `max-tokens`（输出被截断）或静默超时 | 让模型「继续」；调大 `idleTimeoutMs` / `totalTimeoutMs` |
 | 添加提供商/设置页里看不到 Grok | client 包没被加载（多为 `package.json` 的 `dsh.client` 或 `exports["./client"]` 缺项），或依赖解析失败导致 `apply` 抛错 | 看 DSH 日志里有没有 `已注册 provider "grok-web"`；没有就是服务端加载失败，先解决 `ERR_MODULE_NOT_FOUND` |
@@ -265,7 +282,7 @@ client 包的 `__ModuleLoader__` / 槽位注册契约。
 lib/
   index.js         插件入口（注册 grok-web + 可配置提供商 + 面板 API）
   settings.js      schemastery 配置 schema（= DSH 里的设置节）
-  api.js           /grok-web/api/*：登录抓取、调试端口导入、探活、状态
+  api.js           /grok-web/api/*：登录抓取、调试端口导入、手动粘贴 Cookie、探活、状态
   client.js        设置页面板（__ModuleLoader__ 包，手写，无打包器）
   adapter.js       DSH LlmAdapter 契约 + 流式转换
   mgw.js           mgw WebSocket 状态机 + 握手验证
